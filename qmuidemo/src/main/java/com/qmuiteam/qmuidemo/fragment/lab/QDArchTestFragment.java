@@ -24,10 +24,11 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.qmuiteam.qmui.arch.QMUIFragment;
-import com.qmuiteam.qmui.arch.QMUIFragmentActivity;
-import com.qmuiteam.qmui.arch.annotation.MaybeFirstIn;
+import com.qmuiteam.qmui.arch.annotation.LatestVisitRecord;
+import com.qmuiteam.qmui.arch.record.RecordArgumentEditor;
 import com.qmuiteam.qmui.util.QMUIViewHelper;
 import com.qmuiteam.qmui.widget.QMUITopBarLayout;
 import com.qmuiteam.qmui.widget.dialog.QMUIBottomSheet;
@@ -45,8 +46,8 @@ import butterknife.BindView;
 import butterknife.ButterKnife;
 
 
-@MaybeFirstIn(container = {QDMainActivity.class})
 @Widget(name = "QMUIFragment", iconRes = R.mipmap.icon_grid_layout)
+@LatestVisitRecord
 public class QDArchTestFragment extends BaseFragment {
     private static final String TAG = "QDArchTestFragment";
     private static final String ARG_INDEX = "arg_index";
@@ -108,6 +109,24 @@ public class QDArchTestFragment extends BaseFragment {
         Intent intent = new Intent();
         intent.putExtra(DATA_TEST, "test");
         setFragmentResult(RESULT_OK, intent);
+        Bundle arguments = getArguments();
+        if (arguments != null && arguments.getLong("test_long") == 100
+                && arguments.getLong("test_long1") == 1000
+                && arguments.getLong("test_long2") == 400
+                && arguments.getLong("test_long3", 200) == 200
+                && arguments.getFloat("test_float") == 100.13f
+                && "你好".equals(arguments.getString("test_string"))) {
+            Toast.makeText(getContext(), "恢复到最近阅读(Muti)", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    public void onCollectLatestVisitArgument(RecordArgumentEditor editor) {
+        editor.putLong("test_long", 100L);
+        editor.putLong("test_long1", 1000);
+        editor.putLong("test_long2", 400);
+        editor.putString("test_string", "你好");
+        editor.putFloat("test_float", 100.13f);
     }
 
     public static QDArchTestFragment newInstance(int index) {

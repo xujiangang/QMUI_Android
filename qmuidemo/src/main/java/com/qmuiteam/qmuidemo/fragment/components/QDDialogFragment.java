@@ -19,6 +19,7 @@ package com.qmuiteam.qmuidemo.fragment.components;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.support.v4.content.ContextCompat;
+import android.support.v7.widget.AppCompatEditText;
 import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -396,7 +397,7 @@ public class QDDialogFragment extends BaseFragment {
             layout.setLayoutParams(new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             int padding = QMUIDisplayHelper.dp2px(mContext, 20);
             layout.setPadding(padding, padding, padding, padding);
-            mEditText = new EditText(mContext);
+            mEditText = new AppCompatEditText(mContext);
             QMUIViewHelper.setBackgroundKeepingPadding(mEditText, QMUIResHelper.getAttrDrawable(mContext, R.attr.qmui_list_item_bg_with_border_bottom));
             mEditText.setHint("输入框");
             LinearLayout.LayoutParams editTextLP = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, QMUIDisplayHelper.dpToPx(50));
@@ -408,7 +409,7 @@ public class QDDialogFragment extends BaseFragment {
             textView.setText("观察聚焦输入框后，键盘升起降下时 dialog 的高度自适应变化。\n\n" +
                     "QMUI Android 的设计目的是用于辅助快速搭建一个具备基本设计还原效果的 Android 项目，" +
                     "同时利用自身提供的丰富控件及兼容处理，让开发者能专注于业务需求而无需耗费精力在基础代码的设计上。" +
-                    "不管是新项目的创建，或是已有项目的维护，均可使开发效率和项目质量得到大幅度提升。");
+                    "不管是新项目的创建，或是已有项目的维护，均可使开发效率和项目质量得到大幅度提升。\n\n QMUI Android 的设计目的是用于辅助快速搭建一个具备基本设计还原效果的 Android 项目。");
             textView.setTextColor(ContextCompat.getColor(getContext(), R.color.app_color_description));
             textView.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             layout.addView(textView);

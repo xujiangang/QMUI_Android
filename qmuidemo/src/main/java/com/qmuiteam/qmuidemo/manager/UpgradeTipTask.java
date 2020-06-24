@@ -67,7 +67,19 @@ public class UpgradeTipTask implements UpgradeTask {
 
     public CharSequence getUpgradeWord(final Activity activity) {
         SpannableStringBuilder text = new SpannableStringBuilder();
-        if(mNewVersion == QDUpgradeManager.VERSION_1_3_1){
+        if(mNewVersion == QDUpgradeManager.VERSION_1_4_4){
+            text.append("1. Updated arch library to 0.7.0. Provided more swiping back control.\n");
+            text.append("2. Updated qmui library to 1.4.4. Fixed known bugs.");
+        }else if(mNewVersion == QDUpgradeManager.VERSION_1_4_0){
+            text.append("1. Updated qmui library to 1.4.4. Provide annotation MaybeFirstIn and DefaultFirstFragment.\n");
+            text.append("2. Updated lint library to 1.1.0 to Support Android Studio 3.4+.\n");
+            text.append("3. Replaced parent theme of QMUI.Compat with Theme.AppCompat.DayNight.\n");
+            text.append("4. Fixed issues: ");
+            final String[] issues = new String[]{
+                    "636", "642"
+            };
+            handleIssues(activity, text, issues);
+        }else if(mNewVersion == QDUpgradeManager.VERSION_1_3_1){
             text.append("1. ");
             addNewWidget(activity, text, "QMUIContinuousNestedScrollLayout",
                     QDDataManager.getInstance().getDocUrl(QDContinuousNestedScrollFragment.class));

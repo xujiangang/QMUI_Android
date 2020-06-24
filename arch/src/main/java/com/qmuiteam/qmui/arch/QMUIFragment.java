@@ -20,6 +20,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.arch.core.util.Function;
 import android.arch.lifecycle.LifecycleOwner;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.os.Bundle;
@@ -41,14 +42,29 @@ import android.view.animation.AnimationUtils;
 import android.widget.FrameLayout;
 
 import com.qmuiteam.qmui.QMUILog;
+import com.qmuiteam.qmui.arch.annotation.DefaultFirstFragment;
+import com.qmuiteam.qmui.arch.annotation.LatestVisitRecord;
+import com.qmuiteam.qmui.arch.first.FirstFragmentFinder;
+import com.qmuiteam.qmui.arch.first.FirstFragmentFinders;
+import com.qmuiteam.qmui.arch.record.LatestVisitArgumentCollector;
+import com.qmuiteam.qmui.arch.record.RecordArgumentEditor;
+import com.qmuiteam.qmui.util.QMUIDisplayHelper;
 import com.qmuiteam.qmui.util.QMUIKeyboardHelper;
 import com.qmuiteam.qmui.util.QMUIViewHelper;
+import com.qmuiteam.qmui.widget.QMUITopBar;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.qmuiteam.qmui.arch.SwipeBackLayout.DRAG_DIRECTION_BOTTOM_TO_TOP;
+import static com.qmuiteam.qmui.arch.SwipeBackLayout.DRAG_DIRECTION_LEFT_TO_RIGHT;
+import static com.qmuiteam.qmui.arch.SwipeBackLayout.DRAG_DIRECTION_RIGHT_TO_LEFT;
+import static com.qmuiteam.qmui.arch.SwipeBackLayout.DRAG_DIRECTION_TOP_TO_BOTTOM;
+import static com.qmuiteam.qmui.arch.SwipeBackLayout.EDGE_BOTTOM;
 import static com.qmuiteam.qmui.arch.SwipeBackLayout.EDGE_LEFT;
+import static com.qmuiteam.qmui.arch.SwipeBackLayout.EDGE_RIGHT;
+import static com.qmuiteam.qmui.arch.SwipeBackLayout.EDGE_TOP;
 
 /**
  * With the use of {@link QMUIFragmentActivity}, {@link QMUIFragment} brings more features,
@@ -56,8 +72,9 @@ import static com.qmuiteam.qmui.arch.SwipeBackLayout.EDGE_LEFT;
  * <p>
  * Created by cgspine on 15/9/14.
  */
-public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyLifecycleOwner.Callback {
-    private static final String SWIPE_BACK_VIEW = "swipe_back_view";
+public abstract class QMUIFragment extends Fragment implements
+        QMUIFragmentLazyLifecycleOwner.Callback, LatestVisitArgumentCollector {
+    static final String SWIPE_BACK_VIEW = "swipe_back_view";
     private static final String TAG = QMUIFragment.class.getSimpleName();
 
     protected static final TransitionConfig SLIDE_TRANSITION_CONFIG = new TransitionConfig(
@@ -135,10 +152,46 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
 
     @Override
     public void onResume() {
+        checkLatestVisitRecord();
         super.onResume();
         if (mBaseView != null && mPostResumeRunnableList != null && !mPostResumeRunnableList.isEmpty()) {
             mBaseView.post(mCheckPostResumeRunnable);
         }
+    }
+
+    private void checkLatestVisitRecord() {
+        Class<? extends QMUIFragment> cls = getClass();
+        Activity activity = getActivity();
+        if (getParentFragment() != null || !(activity instanceof QMUIFragmentActivity)) {
+            return;
+        }
+        if (!cls.isAnnotationPresent(LatestVisitRecord.class)) {
+            QMUILatestVisit.getInstance(getContext()).clearFragmentLatestVisitRecord();
+            return;
+        }
+        if (!activity.getClass().isAnnotationPresent(LatestVisitRecord.class)) {
+            throw new RuntimeException(String.format("Can not perform LatestVisitRecord, " +
+                    "%s must be annotated by LatestVisitRecord", activity.getClass().getSimpleName()));
+        }
+        DefaultFirstFragment defaultFirstFragment = activity.getClass().getAnnotation(DefaultFirstFragment.class);
+        if (defaultFirstFragment != null && defaultFirstFragment.value() == getClass()) {
+            QMUILatestVisit.getInstance(getContext()).performLatestVisitRecord(this);
+        } else {
+            QMUIFragmentActivity qActivity = (QMUIFragmentActivity) activity;
+            int id = FirstFragmentFinders.getInstance().get(qActivity.getClass()).getIdByFragmentClass(cls);
+            if (id == FirstFragmentFinder.NO_ID) {
+                throw new RuntimeException(String.format("Can not perform LatestVisitRecord, " +
+                                "%s must be annotated by FirstFragments which contains %s",
+                        activity.getClass().getSimpleName(), cls.getSimpleName()));
+            }
+            QMUILatestVisit.getInstance(getContext()).performLatestVisitRecord(this);
+        }
+    }
+
+
+    @Override
+    public void onCollectLatestVisitArgument(RecordArgumentEditor editor) {
+
     }
 
     protected void startFragmentAndDestroyCurrent(QMUIFragment fragment) {
@@ -274,6 +327,9 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        if (mBaseView.getTag(R.id.qmui_arch_reused_layout) == null) {
+            onViewCreated(mBaseView);
+        }
         mLazyViewLifecycleOwner = new QMUIFragmentLazyLifecycleOwner(this);
         mLazyViewLifecycleOwner.setViewVisible(getUserVisibleHint());
         getViewLifecycleOwner().getLifecycle().addObserver(mLazyViewLifecycleOwner);
@@ -309,20 +365,22 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
             if (rootView.getParent() != null) {
                 ((ViewGroup) rootView.getParent()).removeView(rootView);
             }
+            rootView.setTag(R.id.qmui_arch_reused_layout, true);
         }
         if (translucentFull()) {
             rootView.setFitsSystemWindows(false);
         } else {
             rootView.setFitsSystemWindows(true);
         }
-        final SwipeBackLayout swipeBackLayout = SwipeBackLayout.wrap(rootView, dragBackEdge(),
+        final SwipeBackLayout swipeBackLayout = SwipeBackLayout.wrap(rootView, dragBackDirection(),
+                dragViewMoveAction(),
                 new SwipeBackLayout.Callback() {
                     @Override
-                    public boolean canSwipeBack() {
+                    public boolean canSwipeBack(SwipeBackLayout layout, int dragDirection, int moveEdge) {
                         if (mEnterAnimationStatus != ANIMATION_ENTER_STATUS_END) {
                             return false;
                         }
-                        if (!canDragBack()) {
+                        if (!canDragBack(layout.getContext(), dragDirection, moveEdge)) {
                             return false;
                         }
 
@@ -349,6 +407,11 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
                             return QMUISwipeBackActivityManager.getInstance().canSwipeBack();
                         }
                         return true;
+                    }
+
+                    @Override
+                    public boolean shouldBeginDrag(SwipeBackLayout swipeBackLayout, float downX, float downY, int dragDirection) {
+                        return QMUIFragment.this.shouldBeginDrag(swipeBackLayout, downX, downY, dragDirection);
                     }
                 });
         mListenerRemover = swipeBackLayout.addSwipeListener(mSwipeListener);
@@ -430,27 +493,28 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
         }
 
         @Override
-        public void onScroll(int edgeFlag, float scrollPercent) {
+        public void onScroll(int dragDirection, int moveEdge, float scrollPercent) {
             scrollPercent = Math.max(0f, Math.min(1f, scrollPercent));
-            int targetOffset = (int) (Math.abs(backViewInitOffset()) * (1 - scrollPercent));
             ViewGroup container = getBaseFragmentActivity().getFragmentContainer();
+            int targetOffset = (int) (Math.abs(
+                    backViewInitOffset(container.getContext(), dragDirection, moveEdge)) * (1 - scrollPercent));
             int childCount = container.getChildCount();
             for (int i = childCount - 1; i >= 0; i--) {
                 View view = container.getChildAt(i);
                 Object tag = view.getTag(R.id.qmui_arch_swipe_layout_in_back);
                 if (SWIPE_BACK_VIEW.equals(tag)) {
-                    SwipeBackLayout.offsetInScroll(view, edgeFlag, targetOffset);
+                    SwipeBackLayout.offsetInSwipeBack(view, moveEdge, targetOffset);
                 }
             }
             if (mSwipeBackgroundView != null) {
-                SwipeBackLayout.offsetInScroll(mSwipeBackgroundView, edgeFlag, targetOffset);
+                SwipeBackLayout.offsetInSwipeBack(mSwipeBackgroundView, moveEdge, targetOffset);
             }
         }
 
         @SuppressLint("PrivateApi")
         @Override
-        public void onEdgeTouch(final int edgeFlag) {
-            Log.i(TAG, "SwipeListener:onEdgeTouch: edgeFlag = " + edgeFlag);
+        public void onSwipeBackBegin(final int dragDirection, final int moveEdge) {
+            Log.i(TAG, "SwipeListener:onSwipeBackBegin: moveEdge = " + moveEdge);
             FragmentManager fragmentManager = getFragmentManager();
             if (fragmentManager == null) {
                 return;
@@ -489,9 +553,9 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
                                         mModifiedFragment.isCreateForSwipeBack = false;
                                         if (baseView != null) {
                                             addViewInSwipeBack(container, baseView, 0);
-                                            handleChildFragmentListWhenSwipeBackStart(baseView);
-                                            SwipeBackLayout.offsetInEdgeTouch(baseView, edgeFlag,
-                                                    Math.abs(backViewInitOffset()));
+                                            handleChildFragmentListWhenSwipeBackStart(mModifiedFragment, baseView);
+                                            SwipeBackLayout.offsetInSwipeBack(baseView, moveEdge,
+                                                    Math.abs(backViewInitOffset(baseView.getContext(), dragDirection, moveEdge)));
                                         }
                                     }
                                 }
@@ -526,8 +590,8 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
                                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                     }
                     mSwipeBackgroundView.bind(prevActivity, currentActivity, restoreSubWindowWhenDragBack());
-                    SwipeBackLayout.offsetInEdgeTouch(mSwipeBackgroundView, edgeFlag,
-                            Math.abs(backViewInitOffset()));
+                    SwipeBackLayout.offsetInSwipeBack(mSwipeBackgroundView, moveEdge,
+                            Math.abs(backViewInitOffset(decorView.getContext(), dragDirection, moveEdge)));
                 }
             }
         }
@@ -565,11 +629,11 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
         }
 
 
-        private void handleChildFragmentListWhenSwipeBackStart(View baseView) throws IllegalAccessException {
+        private void handleChildFragmentListWhenSwipeBackStart(Fragment parentFragment, View baseView) throws IllegalAccessException {
             // handle issue #235
             if (baseView instanceof ViewGroup) {
                 ViewGroup childMainContainer = (ViewGroup) baseView;
-                FragmentManager childFragmentManager = mModifiedFragment.getChildFragmentManager();
+                FragmentManager childFragmentManager = parentFragment.getChildFragmentManager();
                 List<Fragment> childFragmentList = childFragmentManager.getFragments();
                 int childContainerId = 0;
                 ViewGroup childContainer = null;
@@ -595,6 +659,7 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
                                         LayoutInflater.from(childContainer.getContext()), childContainer, null);
                                 qmuiFragment.isCreateForSwipeBack = false;
                                 addViewInSwipeBack(childContainer, childView);
+                                handleChildFragmentListWhenSwipeBackStart(fragment, childView);
                             }
                         }
                     }
@@ -672,6 +737,7 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
                 mCacheSwipeBackLayout = swipeBackLayout;
             } else {
                 swipeBackLayout = mCacheSwipeBackLayout;
+                mCacheRootView.setTag(R.id.qmui_arch_reused_layout, true);
             }
         }
 
@@ -697,26 +763,54 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
         popBackStack();
     }
 
+    /**
+     * pop back
+     */
     protected void popBackStack() {
-        if (!isResumed() || mEnterAnimationStatus != ANIMATION_ENTER_STATUS_END) {
-            return;
-        }
-
-        if (checkStateLoss("popBackStack")) {
+        if (checkPopBack()) {
             getBaseFragmentActivity().popBackStack();
         }
     }
 
+    /**
+     * pop back to a class type fragment
+     *
+     * @param cls the target fragment class type
+     */
+    protected void popBackStack(Class<? extends QMUIFragment> cls) {
+        if (checkPopBack()) {
+            getBaseFragmentActivity().popBackStack(cls);
+        }
+    }
+
+    /**
+     * pop back to a non-class type Fragment
+     *
+     * @param cls the target fragment class type
+     */
+    protected void popBackStackInclusive(Class<? extends QMUIFragment> cls) {
+        if (checkPopBack()) {
+            getBaseFragmentActivity().popBackStackInclusive(cls);
+        }
+    }
+
+    private boolean checkPopBack() {
+        if (!isResumed() || mEnterAnimationStatus != ANIMATION_ENTER_STATUS_END) {
+            return false;
+        }
+        return checkStateLoss("popBackStack");
+    }
+
     protected void popBackStackAfterResume() {
-        if (isResumed() && mEnterAnimationStatus != ANIMATION_ENTER_STATUS_END) {
+        if (isResumed() && mEnterAnimationStatus == ANIMATION_ENTER_STATUS_END) {
             popBackStack();
         } else {
             runAfterAnimation(new Runnable() {
                 @Override
                 public void run() {
-                    if(isResumed()){
+                    if (isResumed()) {
                         popBackStack();
-                    }else{
+                    } else {
                         runAfterResumed(new Runnable() {
                             @Override
                             public void run() {
@@ -754,14 +848,23 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
 
     @Override
     public Animation onCreateAnimation(int transit, boolean enter, int nextAnim) {
-        if (!enter && getParentFragment() != null && getParentFragment().isRemoving()) {
-            // This is a workaround for the bug where child fragments disappear when
+        if (!enter) {
+            // This is a workaround for the bug where child value disappear when
             // the parent is removed (as all children are first removed from the parent)
             // See https://code.google.com/p/android/issues/detail?id=55228
-            Animation doNothingAnim = new AlphaAnimation(1, 1);
-            int duration = getResources().getInteger(R.integer.qmui_anim_duration);
-            doNothingAnim.setDuration(duration);
-            return doNothingAnim;
+            Fragment rootParentFragment = null;
+            Fragment parentFragment = getParentFragment();
+            while (parentFragment != null) {
+                rootParentFragment = parentFragment;
+                parentFragment = parentFragment.getParentFragment();
+            }
+            if (rootParentFragment != null && rootParentFragment.isRemoving()) {
+                Animation doNothingAnim = new AlphaAnimation(1, 1);
+                int duration = getResources().getInteger(R.integer.qmui_anim_duration);
+                doNothingAnim.setDuration(duration);
+                return doNothingAnim;
+            }
+
         }
         Animation animation = null;
         if (enter) {
@@ -813,6 +916,19 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
      */
     protected abstract View onCreateView();
 
+
+    /**
+     * Corresponding to {@link #onCreateView()}, it called only when new UI (not cached UI)
+     * is created by {@link #onCreateView()}.
+     * It may be used to bind views to fragment and dynamically create child views such as
+     * {@link QMUITopBar#addLeftBackImageButton()}
+     *
+     * @param rootView the view created by {@link #onCreateView()}
+     */
+    protected void onViewCreated(@NonNull View rootView) {
+
+    }
+
     /**
      * Will be performed in onStart
      *
@@ -828,16 +944,29 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
      * disable or enable drag back
      *
      * @return if true open dragBack, otherwise close dragBack
+     * @deprecated Use {@link #canDragBack(Context, int, int)}
      */
+    @Deprecated
     protected boolean canDragBack() {
         return true;
     }
 
+
+    protected boolean canDragBack(Context context, int dragDirection, int moveEdge) {
+        return canDragBack();
+    }
+
     /**
      * @return the init offset for backView for Parallax scrolling
+     * @deprecated Use {@link #backViewInitOffset(Context, int, int)}
      */
+    @Deprecated
     protected int backViewInitOffset() {
         return 0;
+    }
+
+    protected int backViewInitOffset(Context context, int dragDirection, int moveEdge) {
+        return backViewInitOffset();
     }
 
     /**
@@ -847,8 +976,44 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
 
     }
 
+    /**
+     * @return
+     * @deprecated Use {@link #dragBackDirection()}
+     */
+    @Deprecated
     protected int dragBackEdge() {
         return EDGE_LEFT;
+    }
+
+    protected int dragBackDirection() {
+        int oldEdge = dragBackEdge();
+        if (oldEdge == EDGE_RIGHT) {
+            return SwipeBackLayout.DRAG_DIRECTION_RIGHT_TO_LEFT;
+        } else if (oldEdge == EDGE_TOP) {
+            return SwipeBackLayout.DRAG_DIRECTION_TOP_TO_BOTTOM;
+        } else if (oldEdge == EDGE_BOTTOM) {
+            return SwipeBackLayout.DRAG_DIRECTION_BOTTOM_TO_TOP;
+        }
+        return SwipeBackLayout.DRAG_DIRECTION_LEFT_TO_RIGHT;
+    }
+
+    protected SwipeBackLayout.ViewMoveAction dragViewMoveAction() {
+        return SwipeBackLayout.MOVE_VIEW_AUTO;
+    }
+
+    protected boolean shouldBeginDrag(SwipeBackLayout swipeBackLayout,
+                                      float downX, float downY, int dragDirection) {
+        int edgeSize = QMUIDisplayHelper.dp2px(swipeBackLayout.getContext(), 20);
+        if (dragDirection == DRAG_DIRECTION_LEFT_TO_RIGHT) {
+            return downX < edgeSize;
+        } else if (dragDirection == DRAG_DIRECTION_RIGHT_TO_LEFT) {
+            return downX > swipeBackLayout.getWidth() - edgeSize;
+        } else if (dragDirection == DRAG_DIRECTION_TOP_TO_BOTTOM) {
+            return downY < edgeSize;
+        } else if (dragDirection == DRAG_DIRECTION_BOTTOM_TO_TOP) {
+            return downY > swipeBackLayout.getHeight() - edgeSize;
+        }
+        return true;
     }
 
     /**
@@ -917,7 +1082,7 @@ public abstract class QMUIFragment extends Fragment implements QMUIFragmentLazyL
             ArrayList<Runnable> list = mDelayRenderRunnableList;
             mDelayRenderRunnableList = null;
             if (!list.isEmpty()) {
-                for(Runnable runnable: list){
+                for (Runnable runnable : list) {
                     runnable.run();
                 }
             }

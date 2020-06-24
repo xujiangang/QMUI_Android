@@ -637,7 +637,7 @@ public class QMUILayoutHelper implements IQMUILayout {
             if (mTopDividerAlpha < 255) {
                 mDividerPaint.setAlpha(mTopDividerAlpha);
             }
-            float y = mTopDividerHeight * 1f / 2;
+            float y = mTopDividerHeight / 2f;
             canvas.drawLine(mTopDividerInsetLeft, y, w - mTopDividerInsetRight, y, mDividerPaint);
         }
 
@@ -647,7 +647,7 @@ public class QMUILayoutHelper implements IQMUILayout {
             if (mBottomDividerAlpha < 255) {
                 mDividerPaint.setAlpha(mBottomDividerAlpha);
             }
-            float y = (float) Math.floor(h - mBottomDividerHeight * 1f / 2);
+            float y = (float) Math.floor(h - mBottomDividerHeight / 2f);
             canvas.drawLine(mBottomDividerInsetLeft, y, w - mBottomDividerInsetRight, y, mDividerPaint);
         }
 
@@ -657,7 +657,8 @@ public class QMUILayoutHelper implements IQMUILayout {
             if (mLeftDividerAlpha < 255) {
                 mDividerPaint.setAlpha(mLeftDividerAlpha);
             }
-            canvas.drawLine(0, mLeftDividerInsetTop, 0, h - mLeftDividerInsetBottom, mDividerPaint);
+            float x = mLeftDividerWidth / 2f;
+            canvas.drawLine(x, mLeftDividerInsetTop, x, h - mLeftDividerInsetBottom, mDividerPaint);
         }
 
         if (mRightDividerWidth > 0) {
@@ -666,7 +667,8 @@ public class QMUILayoutHelper implements IQMUILayout {
             if (mRightDividerAlpha < 255) {
                 mDividerPaint.setAlpha(mRightDividerAlpha);
             }
-            canvas.drawLine(w, mRightDividerInsetTop, w, h - mRightDividerInsetBottom, mDividerPaint);
+            float x = (float) Math.floor(w - mRightDividerWidth / 2f);
+            canvas.drawLine(x, mRightDividerInsetTop, x, h - mRightDividerInsetBottom, mDividerPaint);
         }
     }
 
@@ -676,7 +678,9 @@ public class QMUILayoutHelper implements IQMUILayout {
         if (owner == null) {
             return;
         }
-        if (mBorderColor == 0 && (mRadius == 0 || mOuterNormalColor == 0)) {
+        boolean needCheckFakeOuterNormalDraw = mRadius > 0 && !useFeature() && mOuterNormalColor != 0;
+        boolean needDrawBorder = mBorderWidth > 0 && mBorderColor != 0;
+        if (!needCheckFakeOuterNormalDraw && !needDrawBorder) {
             return;
         }
 
@@ -687,22 +691,19 @@ public class QMUILayoutHelper implements IQMUILayout {
         int width = canvas.getWidth(), height = canvas.getHeight();
 
         // react
+        float halfBorderWith = mBorderWidth / 2f;
         if (mIsOutlineExcludePadding) {
-            mBorderRect.set(1 + owner.getPaddingLeft(), 1 + owner.getPaddingTop(),
-                    width - 1 - owner.getPaddingRight(), height - 1 - owner.getPaddingBottom());
+            mBorderRect.set(
+                    owner.getPaddingLeft() + halfBorderWith,
+                    owner.getPaddingTop() + halfBorderWith,
+                    width - owner.getPaddingRight() - halfBorderWith,
+                    height - owner.getPaddingBottom() - halfBorderWith);
         } else {
-            mBorderRect.set(1, 1, width - 1, height - 1);
+            mBorderRect.set(halfBorderWith, halfBorderWith,
+                    width- halfBorderWith, height - halfBorderWith);
         }
 
-        if (mRadius == 0 || (!useFeature() && mOuterNormalColor == 0)) {
-            mClipPaint.setStyle(Paint.Style.STROKE);
-            mClipPaint.setColor(mBorderColor);
-            canvas.drawRect(mBorderRect, mClipPaint);
-            return;
-        }
-
-        // 圆角矩形
-        if (!useFeature()) {
+        if (needCheckFakeOuterNormalDraw) {
             int layerId = canvas.saveLayer(0, 0, width, height, null, Canvas.ALL_SAVE_FLAG);
             canvas.drawColor(mOuterNormalColor);
             mClipPaint.setColor(mOuterNormalColor);
@@ -717,13 +718,17 @@ public class QMUILayoutHelper implements IQMUILayout {
             canvas.restoreToCount(layerId);
         }
 
-        mClipPaint.setColor(mBorderColor);
-        mClipPaint.setStrokeWidth(mBorderWidth);
-        mClipPaint.setStyle(Paint.Style.STROKE);
-        if (mRadiusArray == null) {
-            canvas.drawRoundRect(mBorderRect, mRadius, mRadius, mClipPaint);
-        } else {
-            drawRoundRect(canvas, mBorderRect, mRadiusArray, mClipPaint);
+        if (needDrawBorder) {
+            mClipPaint.setColor(mBorderColor);
+            mClipPaint.setStrokeWidth(mBorderWidth);
+            mClipPaint.setStyle(Paint.Style.STROKE);
+            if (mRadiusArray != null) {
+                drawRoundRect(canvas, mBorderRect, mRadiusArray, mClipPaint);
+            } else if (mRadius <= 0) {
+                canvas.drawRect(mBorderRect, mClipPaint);
+            } else {
+                canvas.drawRoundRect(mBorderRect, mRadius, mRadius, mClipPaint);
+            }
         }
     }
 

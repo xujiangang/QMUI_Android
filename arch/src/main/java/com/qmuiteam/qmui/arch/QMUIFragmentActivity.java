@@ -18,6 +18,7 @@ package com.qmuiteam.qmui.arch;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -45,7 +46,7 @@ public abstract class QMUIFragmentActivity extends InnerBaseActivity {
     public static final String QMUI_INTENT_DST_FRAGMENT = "qmui_intent_dst_fragment";
     public static final String QMUI_INTENT_FRAGMENT_ARG = "qmui_intent_fragment_arg";
     private static final String TAG = "QMUIFragmentActivity";
-    private QMUIWindowInsetLayout mFragmentContainer;
+    private RootView mFragmentContainer;
     private boolean mIsFirstFragmentAddedByAnnotation = false;
 
     @SuppressWarnings("SameReturnValue")
@@ -55,7 +56,7 @@ public abstract class QMUIFragmentActivity extends InnerBaseActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         QMUIStatusBarHelper.translucent(this);
-        mFragmentContainer = new QMUIWindowInsetLayout(this);
+        mFragmentContainer = new RootView(this);
         mFragmentContainer.setId(getContextViewId());
         setContentView(mFragmentContainer);
         mIsFirstFragmentAddedByAnnotation = false;
@@ -256,7 +257,7 @@ public abstract class QMUIFragmentActivity extends InnerBaseActivity {
         Log.i(TAG, "popBackStack: getSupportFragmentManager().getBackStackEntryCount() = " + getSupportFragmentManager().getBackStackEntryCount());
         if (getSupportFragmentManager().getBackStackEntryCount() <= 1) {
             QMUIFragment fragment = getCurrentFragment();
-            if (fragment == null) {
+            if (fragment == null || QMUISwipeBackActivityManager.getInstance().canSwipeBack()) {
                 finish();
                 return;
             }
@@ -265,7 +266,7 @@ public abstract class QMUIFragmentActivity extends InnerBaseActivity {
             if (toExec != null) {
                 if (toExec instanceof QMUIFragment) {
                     QMUIFragment mFragment = (QMUIFragment) toExec;
-                    startFragment(mFragment);
+                    startFragmentAndDestroyCurrent(mFragment, false);
                 } else if (toExec instanceof Intent) {
                     Intent intent = (Intent) toExec;
                     startActivity(intent);
@@ -335,7 +336,7 @@ public abstract class QMUIFragmentActivity extends InnerBaseActivity {
         if (dstId == FirstFragmentFinder.NO_ID) {
             String fragmentName = firstFragment.getName();
             throw new RuntimeException("Can not find ID for " + fragmentName +
-                    "; You must add annotation MaybeFirstIn which include " + targetActivity.getName() +
+                    "; You must add annotation MayFirstFragment which include " + targetActivity.getName() +
                     " in " + fragmentName + " .");
         }
         intent.putExtra(QMUI_INTENT_DST_FRAGMENT, dstId);
@@ -343,5 +344,33 @@ public abstract class QMUIFragmentActivity extends InnerBaseActivity {
             intent.putExtra(QMUI_INTENT_FRAGMENT_ARG, fragmentArgs);
         }
         return intent;
+    }
+
+
+    private static class RootView extends QMUIWindowInsetLayout {
+
+        public RootView(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            super.onLayout(changed, left, top, right, bottom);
+            for (int i = 0; i < getChildCount(); i++) {
+                SwipeBackLayout.updateLayoutInSwipeBack(getChildAt(i));
+            }
+        }
+
+        @Override
+        public boolean applySystemWindowInsets21(Object insets) {
+            super.applySystemWindowInsets21(insets);
+            return true;
+        }
+
+        @Override
+        public boolean applySystemWindowInsets19(Rect insets) {
+            super.applySystemWindowInsets19(insets);
+            return true;
+        }
     }
 }

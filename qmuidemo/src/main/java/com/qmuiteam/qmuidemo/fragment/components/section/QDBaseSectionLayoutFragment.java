@@ -83,12 +83,6 @@ public abstract class QDBaseSectionLayoutFragment extends BaseFragment {
     }
 
     private void initRefreshLayout() {
-        mPullRefreshLayout.setChildScrollUpCallback(new QMUIPullRefreshLayout.OnChildScrollUpCallback() {
-            @Override
-            public boolean canChildScrollUp(QMUIPullRefreshLayout parent, @Nullable View child) {
-                return QMUIPullRefreshLayout.defaultCanScrollUp(mSectionLayout.getRecyclerView());
-            }
-        });
         mPullRefreshLayout.setOnPullListener(new QMUIPullRefreshLayout.OnPullListener() {
             @Override
             public void onMoveTarget(int offset) {
@@ -150,7 +144,7 @@ public abstract class QDBaseSectionLayoutFragment extends BaseFragment {
         mSectionLayout.setAdapter(mAdapter, true);
         ArrayList<QMUISection<SectionHeader, SectionItem>> list = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
-            list.add(createSection("header " + i, i % 2 == 0));
+            list.add(createSection("header " + i, i%2 != 0));
         }
         mAdapter.setData(list);
     }
@@ -163,7 +157,7 @@ public abstract class QDBaseSectionLayoutFragment extends BaseFragment {
         }
         QMUISection<SectionHeader, SectionItem> section = new QMUISection<>(header, contents, isFold);
         // if test load more, you can open the code
-//        section.setExistAfterDataToLoad(true);
+        section.setExistAfterDataToLoad(true);
 //        section.setExistBeforeDataToLoad(true);
         return section;
     }
